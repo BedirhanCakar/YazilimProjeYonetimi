@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Görüntü Sahteciliği Tespiti</title>
+    <link rel="stylesheet" href="/frontend/css/style.css" />
+</head>
+<body>
+    <main class="container">
+        <section class="panel">
+            <h1>Görüntü Sahteciliği Tespiti</h1>
+            <p>GIF, JPEG, PNG formatlarında görüntü yükleyip klasik ve AI tabanlı tespit sonuçlarını alın.</p>
+
+            <form id="upload-form">
+                <label class="file-label">
+                    <span>Görüntü seçin</span>
+                    <input type="file" name="file" accept="image/png, image/jpeg, image/gif" required />
+                </label>
+                <button type="submit" class="primary-button">Gönder</button>
+            </form>
+
+            <div id="result" class="result-card hidden">
+                <h2>Sonuç</h2>
+                <pre id="result-json"></pre>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        const form = document.getElementById('upload-form');
+        const resultCard = document.getElementById('result');
+        const resultJson = document.getElementById('result-json');
+
+        form.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            const fileInput = event.target.querySelector('input[type=file]');
+            if (!fileInput.files.length) {
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            resultJson.textContent = 'Analiz ediliyor...';
+            resultCard.classList.remove('hidden');
+
+            try {
+                const response = await fetch('/upload/', {
+                    method: 'POST',
+                    body: formData,
+                });
+                const data = await response.json();
+                resultJson.textContent = JSON.stringify(data, null, 2);
+            } catch (error) {
+                resultJson.textContent = 'Hata: ' + error.message;
+            }
+        });
+    </script>
+</body>
+</html>
