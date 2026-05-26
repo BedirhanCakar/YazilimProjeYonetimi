@@ -1,99 +1,221 @@
+"""
+Klasik Bilgisayar Görüşü Algoritmaları ile Copy-Move Sahtecilik Tespiti
+
+Bu modül, SIFT, SURF, AKAZE ve ORB özellik çıkarma algoritmaları kullanarak
+görüntülerdeki kopya-hareket manipülasyonlarını tespit eder.
+"""
+
 import cv2
 import numpy as np
+from typing import Tuple, List, Dict, Any, Optional
 
 
-def _safe_create_sift():
-    if hasattr(cv2, "SIFT_create"):
-        return cv2.SIFT_create()
-    if hasattr(cv2.xfeatures2d, "SIFT_create"):
-        return cv2.xfeatures2d.SIFT_create()
-    return None
-
-
-def _safe_create_surf():
-    if hasattr(cv2, "xfeatures2d") and hasattr(cv2.xfeatures2d, "SURF_create"):
-        return cv2.xfeatures2d.SURF_create(400)
-    return None
-
-
-def _match_keypoints(desc1, desc2, use_l2=True):
-    if desc1 is None or desc2 is None:
-        return 0
-    norm_type = cv2.NORM_L2 if use_l2 else cv2.NORM_HAMMING
-    matcher = cv2.BFMatcher(norm_type, crossCheck=True)
+def _detect_and_compute_sift(gray: np.ndarray) -> Tuple[List, Optional[np.ndarray]]:
+    """SIFT detektörü ile özellik çıkarma."""
     try:
-        matches = matcher.match(desc1, desc2)
-        return len(matches)
+        sift = cv2.SIFT_create()
+        keypoints, descriptors = sift.detectAndCompute(gray, None)
+        return keypoints, descriptors
+    except Exception:
+        return [], None
+
+
+def _detect_and_compute_surf(gray: np.ndarray) -> Tuple[List, Optional[np.ndarray]]:
+    """SURF detektörü ile özellik çıkarma."""
+    try:
+        surf = cv2.xfeatures2d.SURF_create(400)
+        keypoints, descriptors = surf.detectAndCompute(gray, None)
+        return keypoints, descriptors
+    except Exception:
+        return [], None
+
+
+def _detect_and_compute_akaze(gray: np.ndarray) -> Tuple[List, Optional[np.ndarray]]:
+    """AKAZE detektörü ile özellik çıkarma."""
+    try:
+        akaze = cv2.AKAZE_create()
+        keypoints, descriptors = akaze.detectAndCompute(gray, None)
+        return keypoints, descriptors
+    except Exception:
+        return [], None
+
+
+def _detect_and_compute_orb(gray: np.ndarray) -> Tuple[List, Optional[np.ndarray]]:
+    """ORB detektörü ile özellik çıkarma."""
+    try:
+        orb = cv2.ORB_create(5000)
+        keypoints, descriptors = orb.detectAndCompute(gray, None)
+        return keypoints, descriptors
+    except Exception:
+        return [], None
+
+
+def _match_features(descriptors1: Optional[np.ndarray], 
+                   descriptors2: Optional[np.ndarray],
+                   norm_type: int) -> List:
+    """
+    İki tanımlayıcı seti arasında eşleştirme yapma.
+    
+    Args:
+        descriptors1: Birinci tanımlayıcı seti
+        descriptors2: İkinci tanımlayıcı seti
+        norm_type: Mesafe normu türü
+    
+    Returns:
+        Eşleştirme listesi
+    """
+    if descriptors1 is None or descriptors2 is None:
+        return []
+    
+    matcher = cv2.BFMatcher(norm_type, crossCheck=False)
+    try:
+        matches = matcher.knnMatch(descriptors1, descriptors2, k=2)
+        # Lowe's ratio test
+        good_matches = []
+        for match_pair in matches:
+            if len(match_pair) == 2:
+                m, n = match_pair
+                if m.distance < 0.7 * n.distance:
+                    good_matches.append(m)
+        return good_matches
     except cv2.error:
-        return 0
+        return []
 
 
-def _detect_features(image_gray, detector, use_l2=True):
-    if detector is None:
-        return 0, 0
-    keypoints, descriptors = detector.detectAndCompute(image_gray, None)
-    return len(keypoints), descriptors
+def _detect_copy_move_region(image: np.ndarray,
+                            keypoints: List,
+                            matches: List,
+                            threshold: float = 0.05) -> Dict[str, Any]:
+    """
+    Copy-move bölgelerini algılama ve işaretleme.
+    
+    Args:
+        image: Giriş görüntüsü
+        keypoints: Çıkartılan özellik noktaları
+        matches: Eşleştirilen noktalar
+        threshold: Şüphe yüksekliği eşiği
+    
+    Returns:
+        Bölge tespit sonuçları
+    """
+    height, width = image.shape[:2]
+    
+    if len(matches) == 0:
+        return {
+            "detected": False,
+            "confidence": 0.0,
+            "region_count": 0,
+            "average_distance": 0.0
+        }
+    
+    # Eşleştirme vektörlerinin uzunluğunu hesapla
+    distances = []
+    for match in matches:
+        kp = keypoints[match.queryIdx]
+        dist = np.sqrt((kp.pt[0] - keypoints[match.trainIdx].pt[0])**2 + 
+                       (kp.pt[1] - keypoints[match.trainIdx].pt[1])**2)
+        distances.append(dist)
+    
+    avg_distance = np.mean(distances) if distances else 0.0
+    max_distance = np.max(distances) if distances else 0.0
+    
+    # Hareket tahmini
+    consistency_score = 1.0 - min(np.std(distances) / (max_distance + 1e-6), 1.0)
+    
+    # İstatistiksel analiz
+    match_density = len(matches) / max((height * width / 10000), 1)
+    
+    return {
+        "detected": len(matches) > 10 and consistency_score > 0.6,
+        "confidence": min(float(consistency_score * match_density), 1.0),
+        "region_count": len(matches),
+        "average_distance": float(avg_distance),
+        "consistency_score": float(consistency_score)
+    }
 
 
 def detect_copy_move(image: np.ndarray) -> dict:
+    """
+    Görüntü üzerinde copy-move sahteciliğini SIFT, SURF, AKAZE ve ORB 
+    kullanarak tespit eder.
+    
+    Args:
+        image: Analiz edilecek BGR formatında görüntü
+    
+    Returns:
+        Her algoritmanın tespit sonuçları içeren sözlük
+    """
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-
-    results = {
-        "sift": {"available": False, "keypoints": 0, "matches": 0},
-        "surf": {"available": False, "keypoints": 0, "matches": 0},
-        "akaze": {"available": False, "keypoints": 0, "matches": 0},
-        "orb": {"available": False, "keypoints": 0, "matches": 0},
-    }
-
-    sift = _safe_create_sift()
-    if sift is not None:
-        keypoints, descriptors = _detect_features(gray, sift, use_l2=True)
-        matches = _match_keypoints(descriptors, descriptors, use_l2=True)
+    
+    results = {}
+    
+    # SIFT
+    sift_kp, sift_desc = _detect_and_compute_sift(gray)
+    if sift_desc is not None:
+        sift_matches = _match_features(sift_desc, sift_desc, cv2.NORM_L2)
+        sift_region = _detect_copy_move_region(image, sift_kp, sift_matches)
         results["sift"] = {
             "available": True,
-            "keypoints": keypoints,
-            "matches": matches,
-            "score": float(matches) / max(keypoints, 1),
+            "keypoints_count": len(sift_kp),
+            "matches_count": len(sift_matches),
+            "region_detection": sift_region
         }
-
-    surf = _safe_create_surf()
-    if surf is not None:
-        keypoints, descriptors = _detect_features(gray, surf, use_l2=True)
-        matches = _match_keypoints(descriptors, descriptors, use_l2=True)
+    else:
+        results["sift"] = {"available": False}
+    
+    # SURF
+    surf_kp, surf_desc = _detect_and_compute_surf(gray)
+    if surf_desc is not None:
+        surf_matches = _match_features(surf_desc, surf_desc, cv2.NORM_L2)
+        surf_region = _detect_copy_move_region(image, surf_kp, surf_matches)
         results["surf"] = {
             "available": True,
-            "keypoints": keypoints,
-            "matches": matches,
-            "score": float(matches) / max(keypoints, 1),
+            "keypoints_count": len(surf_kp),
+            "matches_count": len(surf_matches),
+            "region_detection": surf_region
         }
-
-    akaze = cv2.AKAZE_create()
-    keypoints, descriptors = _detect_features(gray, akaze, use_l2=False)
-    matches = _match_keypoints(descriptors, descriptors, use_l2=False)
-    results["akaze"] = {
-        "available": True,
-        "keypoints": keypoints,
-        "matches": matches,
-        "score": float(matches) / max(keypoints, 1),
-    }
-
-    orb = cv2.ORB_create(5000)
-    keypoints, descriptors = _detect_features(gray, orb, use_l2=False)
-    matches = _match_keypoints(descriptors, descriptors, use_l2=False)
-    results["orb"] = {
-        "available": True,
-        "keypoints": keypoints,
-        "matches": matches,
-        "score": float(matches) / max(keypoints, 1),
-    }
-
+    else:
+        results["surf"] = {"available": False}
+    
+    # AKAZE
+    akaze_kp, akaze_desc = _detect_and_compute_akaze(gray)
+    if akaze_desc is not None:
+        akaze_matches = _match_features(akaze_desc, akaze_desc, cv2.NORM_HAMMING)
+        akaze_region = _detect_copy_move_region(image, akaze_kp, akaze_matches)
+        results["akaze"] = {
+            "available": True,
+            "keypoints_count": len(akaze_kp),
+            "matches_count": len(akaze_matches),
+            "region_detection": akaze_region
+        }
+    else:
+        results["akaze"] = {"available": False}
+    
+    # ORB
+    orb_kp, orb_desc = _detect_and_compute_orb(gray)
+    if orb_desc is not None:
+        orb_matches = _match_features(orb_desc, orb_desc, cv2.NORM_HAMMING)
+        orb_region = _detect_copy_move_region(image, orb_kp, orb_matches)
+        results["orb"] = {
+            "available": True,
+            "keypoints_count": len(orb_kp),
+            "matches_count": len(orb_matches),
+            "region_detection": orb_region
+        }
+    else:
+        results["orb"] = {"available": False}
+    
+    # Genel özet
+    available_methods = [m for m, r in results.items() if r.get("available", False)]
+    confidences = [results[m]["region_detection"]["confidence"] 
+                  for m in available_methods]
+    
     results["summary"] = {
-        "feature_counts": {
-            "sift": results["sift"]["keypoints"],
-            "surf": results["surf"]["keypoints"],
-            "akaze": results["akaze"]["keypoints"],
-            "orb": results["orb"]["keypoints"],
-        },
-        "notes": "Klasik algoritma sonuçları, sahtecilik tespiti için özet skorlar içerir."
+        "available_methods": available_methods,
+        "overall_confidence": float(np.mean(confidences)) if confidences else 0.0,
+        "method_count": len(available_methods),
+        "consensus_detected": any(results[m]["region_detection"]["detected"] 
+                                 for m in available_methods if m in results)
     }
+    
     return results

@@ -3,59 +3,138 @@
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Görüntü Sahteciliği Tespiti</title>
+    <title>Görüntü Sahteciliği Tespiti - Premium</title>
     <link rel="stylesheet" href="/frontend/css/style.css" />
 </head>
 <body>
+    <header class="header">
+        <div class="header-content">
+            <h1 class="logo">🔍 Sahtecilik Tespiti</h1>
+            <p class="tagline">AI ve Klasik Algoritma Tabanlı Görüntü Analizi</p>
+        </div>
+    </header>
+
     <main class="container">
-        <section class="panel">
-            <h1>Görüntü Sahteciliği Tespiti</h1>
-            <p>GIF, JPEG, PNG formatlarında görüntü yükleyip klasik ve AI tabanlı tespit sonuçlarını alın.</p>
+        <!-- Upload Panel -->
+        <section class="upload-panel">
+            <div class="upload-content">
+                <h2>Görüntü Analiz Paneli</h2>
+                <p>GIF, JPEG, PNG formatlarında dosya yükleyin</p>
 
-            <form id="upload-form">
-                <label class="file-label">
-                    <span>Görüntü seçin</span>
-                    <input type="file" name="file" accept="image/png, image/jpeg, image/gif" required />
-                </label>
-                <button type="submit" class="primary-button">Gönder</button>
-            </form>
+                <form id="upload-form" class="upload-form">
+                    <div class="file-input-wrapper">
+                        <label class="file-label">
+                            <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                                <polyline points="17 8 12 3 7 8"></polyline>
+                                <line x1="12" y1="3" x2="12" y2="15"></line>
+                            </svg>
+                            <span id="file-text">Dosya seçmek için tıklayın</span>
+                            <input type="file" name="file" accept="image/png, image/jpeg, image/gif" required />
+                        </label>
+                        <div id="file-info" class="file-info hidden"></div>
+                    </div>
 
-            <div id="result" class="result-card hidden">
-                <h2>Sonuç</h2>
-                <pre id="result-json"></pre>
+                    <div class="threshold-control">
+                        <label for="threshold">Güven Eşiği:</label>
+                        <input type="range" id="threshold" name="threshold" min="0" max="1" step="0.05" value="0.5" />
+                        <span id="threshold-value">0.50</span>
+                    </div>
+
+                    <button type="submit" class="primary-button">Analiz Et</button>
+                </form>
+            </div>
+        </section>
+
+        <!-- Preview Panel -->
+        <section id="preview-section" class="preview-panel hidden">
+            <h3>Yüklenen Görüntü</h3>
+            <img id="preview-image" src="" alt="Yüklenen görüntü" />
+        </section>
+
+        <!-- Results Panel -->
+        <section id="results-section" class="results-panel hidden">
+            <h2>Analiz Sonuçları</h2>
+
+            <!-- Loading -->
+            <div id="loading" class="loading hidden">
+                <div class="spinner"></div>
+                <p>Analiz ediliyor...</p>
+            </div>
+
+            <!-- CNN Sonuçları -->
+            <div id="cnn-results" class="result-card hidden">
+                <div class="card-header">
+                    <h3>🧠 CNN Analizi</h3>
+                </div>
+                <div class="result-content">
+                    <div class="metric">
+                        <span class="label">Sahtecilik Olasılığı:</span>
+                        <div class="progress-bar">
+                            <div id="cnn-bar" class="progress-fill"></div>
+                        </div>
+                        <span id="cnn-prob" class="value">0%</span>
+                    </div>
+                    <div class="verdict" id="cnn-verdict"></div>
+                </div>
+            </div>
+
+            <!-- LSTM Sonuçları -->
+            <div id="lstm-results" class="result-card hidden">
+                <div class="card-header">
+                    <h3>⏱️ LSTM Analizi</h3>
+                </div>
+                <div class="result-content">
+                    <div class="metric">
+                        <span class="label">Sahtecilik Olasılığı:</span>
+                        <div class="progress-bar">
+                            <div id="lstm-bar" class="progress-fill"></div>
+                        </div>
+                        <span id="lstm-prob" class="value">0%</span>
+                    </div>
+                    <div class="verdict" id="lstm-verdict"></div>
+                </div>
+            </div>
+
+            <!-- Klasik Algoritma Sonuçları -->
+            <div id="classical-results" class="result-card hidden">
+                <div class="card-header">
+                    <h3>🔬 Klasik Algoritmalar (SIFT/SURF/AKAZE/ORB)</h3>
+                </div>
+                <div class="result-content">
+                    <div id="algorithms-list"></div>
+                </div>
+            </div>
+
+            <!-- ELA ve Frekans Analizi -->
+            <div id="advanced-results" class="result-card hidden">
+                <div class="card-header">
+                    <h3>📊 Gelişmiş Analiz</h3>
+                </div>
+                <div class="result-content">
+                    <div class="metric">
+                        <span class="label">Error Level Analysis (ELA):</span>
+                        <span id="ela-score" class="value">0%</span>
+                    </div>
+                    <div class="metric">
+                        <span class="label">Frekans Analizi:</span>
+                        <span id="freq-score" class="value">0%</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Genel Sonuç -->
+            <div id="summary" class="summary-card hidden">
+                <h3>📋 Genel Değerlendirme</h3>
+                <div class="summary-content" id="summary-content"></div>
             </div>
         </section>
     </main>
 
-    <script>
-        const form = document.getElementById('upload-form');
-        const resultCard = document.getElementById('result');
-        const resultJson = document.getElementById('result-json');
+    <footer class="footer">
+        <p>Görüntü Sahteciliği Tespiti © 2026 | Ar-Ge Projesi</p>
+    </footer>
 
-        form.addEventListener('submit', async (event) => {
-            event.preventDefault();
-            const fileInput = event.target.querySelector('input[type=file]');
-            if (!fileInput.files.length) {
-                return;
-            }
-
-            const formData = new FormData();
-            formData.append('file', fileInput.files[0]);
-
-            resultJson.textContent = 'Analiz ediliyor...';
-            resultCard.classList.remove('hidden');
-
-            try {
-                const response = await fetch('/upload/', {
-                    method: 'POST',
-                    body: formData,
-                });
-                const data = await response.json();
-                resultJson.textContent = JSON.stringify(data, null, 2);
-            } catch (error) {
-                resultJson.textContent = 'Hata: ' + error.message;
-            }
-        });
-    </script>
+    <script src="/frontend/js/app.js"></script>
 </body>
 </html>
