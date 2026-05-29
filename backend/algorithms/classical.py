@@ -112,11 +112,15 @@ def _detect_copy_move_region(image: np.ndarray,
     
     # Eşleştirme vektörlerinin uzunluğunu hesapla
     distances = []
+    displacement_vectors = []
     for match in matches:
-        kp = keypoints[match.queryIdx]
-        dist = np.sqrt((kp.pt[0] - keypoints[match.trainIdx].pt[0])**2 + 
-                       (kp.pt[1] - keypoints[match.trainIdx].pt[1])**2)
+        kp_q = keypoints[match.queryIdx]
+        kp_t = keypoints[match.trainIdx]
+        dx = kp_t.pt[0] - kp_q.pt[0]
+        dy = kp_t.pt[1] - kp_q.pt[1]
+        dist = np.hypot(dx, dy)
         distances.append(dist)
+        displacement_vectors.append((dx, dy))
     
     avg_distance = np.mean(distances) if distances else 0.0
     max_distance = np.max(distances) if distances else 0.0
@@ -124,15 +128,29 @@ def _detect_copy_move_region(image: np.ndarray,
     # Hareket tahmini
     consistency_score = 1.0 - min(np.std(distances) / (max_distance + 1e-6), 1.0)
     
+    # Aynı yönde hareket eden eşleşmeleri bul
+    translation_consistency = 0.0
+    if displacement_vectors:
+        disp_array = np.array(displacement_vectors, dtype=np.float32)
+        quantized = np.round(disp_array / 20.0).astype(int)
+        unique, counts = np.unique(quantized, axis=0, return_counts=True)
+        best_cluster = int(np.max(counts)) if counts.size > 0 else 0
+        translation_consistency = best_cluster / len(matches)
+    
     # İstatistiksel analiz
     match_density = len(matches) / max((height * width / 10000), 1)
-    confidence_score = float(np.clip(consistency_score * min(len(matches) / 200.0, 1.0), 0.0, 1.0))
+    confidence_score = float(np.clip(
+        consistency_score * min(len(matches) / 250.0, 1.0) * (0.5 + translation_consistency * 0.5),
+        0.0,
+        1.0
+    ))
     detected = (
-        len(matches) > 60 and
-        consistency_score > 0.8 and
-        avg_distance > 10.0 and
-        max_distance > 15.0 and
-        match_density > 0.5
+        len(matches) > 80 and
+        consistency_score > 0.85 and
+        avg_distance > 18.0 and
+        max_distance > 25.0 and
+        match_density > 1.2 and
+        translation_consistency > 0.35
     )
     
     return {
@@ -140,7 +158,8 @@ def _detect_copy_move_region(image: np.ndarray,
         "confidence": confidence_score,
         "region_count": len(matches),
         "average_distance": float(avg_distance),
-        "consistency_score": float(consistency_score)
+        "consistency_score": float(consistency_score),
+        "translation_consistency": float(translation_consistency)
     }
 
 

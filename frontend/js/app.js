@@ -270,14 +270,23 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         `;
 
-        const isClassicalAlarm = classicalConsensus && classicalScore > 70;
-        const isSuspicious = avgScore >= (threshold * 100) || isClassicalAlarm;
+        const aiDecision = data.ai_algorithms?.overall_suspicion?.final_decision === true;
+        const isClassicalAlarm = classicalConsensus && classicalScore > 80;
+        const isSuspicious = aiDecision || isClassicalAlarm;
         const verdictClass = isSuspicious ? 'suspicious' : 'safe';
         const verdictText = isSuspicious 
             ? '⚠️ Görüntü SAHTECİLİK BELİRTİLERİ İÇERİYOR'
             : '✓ Görüntü ORIJINAL GÖRÜNMEKTEDIR';
 
         html += `<div class="summary-verdict ${verdictClass}">${verdictText}</div>`;
+
+        if (!isSuspicious && classicalConsensus) {
+            html += `<div class="summary-note">Not: Klasik algoritma bir miktar şüphe tespit etti, ancak AI modelleri bunu desteklemiyor.</div>`;
+        }
+
+        if (aiDecision && !classicalConsensus) {
+            html += `<div class="summary-note">AI modelleri sahtecilik sinyali verdi, ancak klasik yöntemlerde yeterli onay yok.</div>`;
+        }
 
         summaryContent.innerHTML = html;
         summaryCard.classList.remove('hidden');

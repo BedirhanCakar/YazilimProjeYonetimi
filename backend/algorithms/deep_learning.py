@@ -166,16 +166,16 @@ def _prepare_image_tensor(image: np.ndarray,
     return tensor.unsqueeze(0)  # Batch dimension ekle
 
 
-def _extract_ela_features(image: np.ndarray, quality: int = 95) -> np.ndarray:
+def _extract_ela_features(image: np.ndarray, quality: int = 95) -> Tuple[float, float, float]:
     """
-    Error Level Analysis (ELA) özellik çıkarma.
+    Error Level Analysis (ELA) analizini yapar ve istatistiklerini döner.
     
     Args:
-        image: Giriş görüntüsü
-        quality: JPEG kalitesi
-    
+        image: BGR formatında giriş görüntüsü
+        quality: JPEG sıkıştırma kalitesi
+        
     Returns:
-        ELA haritası
+        (ortalama_hata, standart_sapma, yapaylik_skoru)
     """
     encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), quality]
     _, encimg = cv2.imencode('.jpg', image, encode_param)
@@ -184,37 +184,109 @@ def _extract_ela_features(image: np.ndarray, quality: int = 95) -> np.ndarray:
     ela = cv2.absdiff(image, decimg)
     ela_gray = cv2.cvtColor(ela, cv2.COLOR_BGR2GRAY)
     
-    return ela_gray
+    mean_val = float(np.mean(ela_gray))
+    std_val = float(np.std(ela_gray))
+    
+    # AI görüntülerinde (tümüyle yapay üretilmişse) gürültü varyansı son derece homojendir (düşük std).
+    # Orijinal resimlerde ise dokulu alanlar nedeniyle std_val daha yüksektir.
+    # Yapaylık skoru: std_val çok düşük (homojen) veya aşırı dengesiz ise yüksek olur.
+    if std_val < 1.2:
+        score = float(np.clip((1.2 - std_val) / 1.2, 0.0, 1.0))
+    elif std_val > 12.0:
+        score = float(np.clip((std_val - 12.0) / 20.0, 0.0, 1.0))
+    else:
+        score = 0.0
+        
+    return mean_val, std_val, score
 
 
-def _extract_frequency_features(image: np.ndarray) -> np.ndarray:
+def _extract_frequency_features(image: np.ndarray) -> Tuple[float, float]:
     """
-    Frekans domain analizi (FFT).
+    Frekans domain analizi (FFT) ile periyodik ızgara hatalarını yakalar.
     
     Args:
-        image: Giriş görüntüsü
-    
+        image: BGR formatında giriş görüntüsü
+        
     Returns:
-        Frekans ortalaması
+        (spektral_oran, yapaylik_skoru)
     """
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    f_transform = np.fft.fft2(gray)
+    # Boyutu standartlaştırarak hesaplama tutarlılığını sağla
+    gray_resized = cv2.resize(gray, (256, 256))
+    
+    f_transform = np.fft.fft2(gray_resized)
     f_shift = np.fft.fftshift(f_transform)
     magnitude = np.abs(f_shift)
     
-    return magnitude
+    # Log genlik sıkıştırması
+    magnitude_log = np.log(magnitude + 1.0)
+    
+    # Merkez (alçak frekans) filtreleme
+    cy, cx = 128, 128
+    r = 20
+    mask = np.ones((256, 256), dtype=np.float32)
+    cv2.circle(mask, (cx, cy), r, 0, -1)
+    
+    high_freq = magnitude_log * mask
+    non_zero = high_freq[mask > 0]
+    
+    mean_val = np.mean(non_zero)
+    std_val = np.std(non_zero)
+    
+    # AI resimlerindeki yapay ızgaralardan dolayı spektral dağılım anormaldir.
+    spectral_ratio = float(std_val / (mean_val + 1e-6))
+    
+    # Doğal görüntülerde spectral_ratio genellikle 0.18 - 0.35 arasındadır.
+    if spectral_ratio < 0.15:
+        score = float(np.clip((0.15 - spectral_ratio) / 0.15, 0.0, 1.0))
+    elif spectral_ratio > 0.36:
+        score = float(np.clip((spectral_ratio - 0.36) / 0.5, 0.0, 1.0))
+    else:
+        score = 0.0
+        
+    return spectral_ratio, score
+
+
+def _extract_noise_features(image: np.ndarray) -> Tuple[float, float]:
+    """
+    Görüntünün yerel sensör gürültüsü varyansını hesaplar.
+    
+    Args:
+        image: BGR formatında giriş görüntüsü
+        
+    Returns:
+        (gürültü_varyansı, yapaylik_skoru)
+    """
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    # Görüntüyü hafifçe bulanıklaştırıp orijinalden çıkararak yüksek frekanslı gürültüyü izole et
+    blurred = cv2.GaussianBlur(gray, (3, 3), 0)
+    noise_map = cv2.absdiff(gray, blurred)
+    
+    noise_var = float(np.var(noise_map))
+    
+    # Gerçek fotoğraflarda sensör gürültüsü varyansı genellikle 1.5 - 18.0 arasındadır.
+    # AI difüzyon resimleri aşırı pürüzsüz (denoised) olduğundan varyans 0.8'in altındadır.
+    if noise_var < 0.8:
+        score = float((0.8 - noise_var) / 0.8)
+    elif noise_var > 22.0:
+        score = float(np.clip((noise_var - 22.0) / 40.0, 0.0, 1.0))
+    else:
+        score = 0.0
+        
+    return noise_var, score
 
 
 def predict_deepfake(image: np.ndarray, threshold: float = 0.5) -> Dict:
     """
-    Görüntü sahtecilik tespiti için CNN ve LSTM modellerini çalıştır.
+    Görüntü sahtecilik ve AI sentez tespiti için CNN/LSTM modelleri ile 
+    güçlendirilmiş FFT, ELA ve Gürültü analizlerini çalıştırır.
     
     Args:
         image: Analiz edilecek BGR formatında görüntü
         threshold: Tespit güven eşiği (0-1 arası)
-    
+        
     Returns:
-        Her modelin tahminini ve güven skorlarını içeren sözlük
+        Detaylı analiz sonuçlarını içeren sözlük
     """
     results = {
         "cnn": {
@@ -229,9 +301,20 @@ def predict_deepfake(image: np.ndarray, threshold: float = 0.5) -> Dict:
         },
         "ela_analysis": {
             "detected": False,
-            "score": 0.0
+            "score": 0.0,
+            "std_val": 0.0
         },
         "frequency_analysis": {
+            "detected": False,
+            "score": 0.0,
+            "ratio": 0.0
+        },
+        "noise_analysis": {
+            "detected": False,
+            "score": 0.0,
+            "variance": 0.0
+        },
+        "synthesis_analysis": {
             "detected": False,
             "score": 0.0
         },
@@ -239,78 +322,128 @@ def predict_deepfake(image: np.ndarray, threshold: float = 0.5) -> Dict:
     }
     
     try:
-        # Tensor hazırlığı
+        # 1. Derin Öğrenme Tensör Hazırlığı ve Tahminler
         tensor = _prepare_image_tensor(image)
         
-        # CNN Model
+        # CNN tahmini
         cnn_model = ForgeryCNN(input_channels=3)
         cnn_model = _load_model_weights(cnn_model, "cnn")
         cnn_model.eval()
-        
         with torch.no_grad():
             cnn_logits = cnn_model(tensor)
             cnn_scores = torch.softmax(cnn_logits, dim=1).cpu().numpy()[0]
-        
         cnn_prob = float(cnn_scores[1])
-        results["cnn"] = {
-            "probability": cnn_prob,
-            "is_suspicious": bool(cnn_prob >= threshold),
-            "confidence": float(np.max(cnn_scores))
-        }
         
-        # LSTM Model
+        # LSTM tahmini
         lstm_model = ForgeryLSTM(feature_dim=128, hidden_dim=64, sequence_length=4)
         lstm_model = _load_model_weights(lstm_model, "lstm")
         lstm_model.eval()
-        
         with torch.no_grad():
             lstm_logits = lstm_model(tensor)
             lstm_scores = torch.softmax(lstm_logits, dim=1).cpu().numpy()[0]
-        
         lstm_prob = float(lstm_scores[1])
+        
+        # 2. İstatistiksel Sentez Analizleri
+        # ELA Analizi
+        ela_mean, ela_std, ela_score = _extract_ela_features(image)
+        # Frekans (FFT) Analizi
+        fft_ratio, fft_score = _extract_frequency_features(image)
+        # Sensör Gürültü Analizi
+        noise_var, noise_score = _extract_noise_features(image)
+        
+        # Model tahmin sınırları
+        cnn_flag = cnn_prob >= (threshold * 0.9)
+        lstm_flag = lstm_prob >= (threshold * 0.9)
+        
+        # Analiz bayrakları
+        ela_detected = ela_score > 0.40
+        fft_detected = fft_score > 0.40
+        noise_detected = noise_score > 0.40
+        
+        results["cnn"] = {
+            "probability": cnn_prob,
+            "is_suspicious": bool(cnn_prob >= threshold),
+            "soft_suspicious": bool(cnn_flag),
+            "confidence": float(np.max(cnn_scores))
+        }
+        
         results["lstm"] = {
             "probability": lstm_prob,
             "is_suspicious": bool(lstm_prob >= threshold),
+            "soft_suspicious": bool(lstm_flag),
             "confidence": float(np.max(lstm_scores))
         }
         
-        # ELA Analizi
-        ela_map = _extract_ela_features(image)
-        ela_mean = float(np.mean(ela_map) / 255.0)
-        ela_threshold = 0.15
         results["ela_analysis"] = {
-            "detected": ela_mean > ela_threshold,
-            "score": min(ela_mean, 1.0)
+            "detected": bool(ela_detected),
+            "score": ela_score,
+            "std_val": ela_std,
+            "mean_val": ela_mean
         }
         
-        # Frekans Analizi
-        freq_features = _extract_frequency_features(image)
-        freq_mean = float(np.mean(freq_features) / np.max(freq_features) if np.max(freq_features) > 0 else 0.0)
         results["frequency_analysis"] = {
-            "detected": freq_mean > 0.3,
-            "score": freq_mean
+            "detected": bool(fft_detected),
+            "score": fft_score,
+            "ratio": fft_ratio
+        }
+        
+        results["noise_analysis"] = {
+            "detected": bool(noise_detected),
+            "score": noise_score,
+            "variance": noise_var
+        }
+        
+        # 3. AI Üretim (Sentez) Konsensüs Skoru
+        # ELA homojenliği, FFT grid bozukluğu ve düşük gürültü varyansı ortak kararda birleştirilir
+        synth_score = min(
+            ela_score * 0.35 + fft_score * 0.35 + noise_score * 0.30,
+            1.0
+        )
+        # En az 2 analiz yöntemi yapaylığa işaret ediyor ve genel sentez skoru eşiğin üzerindeyse
+        synth_detected = synth_score >= 0.45 and (sum([ela_detected, fft_detected, noise_detected]) >= 2)
+        
+        results["synthesis_analysis"] = {
+            "detected": bool(synth_detected),
+            "score": synth_score
+        }
+        
+        # 4. Genel Karar Mutabakatı (Consensus)
+        all_probs = [
+            cnn_prob,
+            lstm_prob,
+            ela_score,
+            fft_score,
+            noise_score,
+            synth_score
+        ]
+        
+        # AI Sentez veya Derin Öğrenme Modelleri Alarm Veriyorsa
+        consensus_count = sum([cnn_flag, lstm_flag, ela_detected, fft_detected, noise_detected, synth_detected])
+        
+        final_decision = (
+            (cnn_flag and lstm_flag) or
+            synth_detected or
+            (consensus_count >= 3) or
+            ((cnn_flag or lstm_flag) and synth_score > 0.40)
+        )
+        
+        results["overall_suspicion"] = {
+            "average_score": float(np.mean(all_probs)),
+            "max_score": float(np.max(all_probs)),
+            "consensus": consensus_count >= 2,
+            "final_decision": bool(final_decision),
+            "ai_flags": {
+                "cnn": bool(cnn_flag),
+                "lstm": bool(lstm_flag),
+                "ela": bool(ela_detected),
+                "frequency": bool(fft_detected),
+                "noise": bool(noise_detected),
+                "synthesis": bool(synth_detected)
+            }
         }
         
     except Exception as e:
         results["error"] = str(e)
-    
-    # Genel özet
-    all_probs = [
-        results["cnn"]["probability"],
-        results["lstm"]["probability"],
-        results["ela_analysis"]["score"],
-        results["frequency_analysis"]["score"]
-    ]
-    
-    results["overall_suspicion"] = {
-        "average_score": float(np.mean(all_probs)),
-        "max_score": float(np.max(all_probs)),
-        "consensus": sum([
-            results["cnn"]["is_suspicious"],
-            results["lstm"]["is_suspicious"],
-            results["ela_analysis"]["detected"],
-            results["frequency_analysis"]["detected"]
-        ]) >= 2
-    }
-    
+        
     return results
+
