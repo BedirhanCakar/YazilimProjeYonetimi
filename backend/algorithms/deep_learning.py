@@ -11,6 +11,19 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from typing import Dict, Tuple
+from pathlib import Path
+
+
+def _load_model_weights(model, model_name):
+    """Load pre-trained weights if they exist."""
+    weights_path = Path(__file__).parent.parent / "models" / f"{model_name}_weights.pth"
+    if weights_path.exists():
+        try:
+            model.load_state_dict(torch.load(weights_path, map_location=torch.device("cpu")))
+            print(f"[INFO] Model ağırlıkları yüklendi: {weights_path}")
+        except Exception as e:
+            print(f"[WARN] Model ağırlıkları yüklenemiyor: {model_name}: {e}")
+    return model
 
 
 class ForgeryCNN(nn.Module):
@@ -231,6 +244,7 @@ def predict_deepfake(image: np.ndarray, threshold: float = 0.5) -> Dict:
         
         # CNN Model
         cnn_model = ForgeryCNN(input_channels=3)
+        cnn_model = _load_model_weights(cnn_model, "cnn")
         cnn_model.eval()
         
         with torch.no_grad():
@@ -246,6 +260,7 @@ def predict_deepfake(image: np.ndarray, threshold: float = 0.5) -> Dict:
         
         # LSTM Model
         lstm_model = ForgeryLSTM(feature_dim=128, hidden_dim=64, sequence_length=4)
+        lstm_model = _load_model_weights(lstm_model, "lstm")
         lstm_model.eval()
         
         with torch.no_grad():

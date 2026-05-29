@@ -1,0 +1,67 @@
+.venv/
+.env
+env/
+venv/
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.python-version
+
+# IDE/editor
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python test / build
+.pytest_cache/
+.tox/
+.coverage
+coverage.xml
+htmlcov/
+
+# Pip / wheel
+pip-wheel-metadata/
+*.whl
+build/
+dist/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Logs
+*.log
+logs/
+
+# Model weights and large artifacts
+backend/models/
+*.pth
+*.pt
+
+# Training / dataset
+data/
+backend/data/
+
+# Secrets
+secrets.json
+credentials.json
+
+# Temporary
+*.tmp
+*.bak
+*.swp
+
+# Node (if any frontend tooling)
+node_modules/
+
+# VS Code workspace storage
+.vscode-server/
+
+# Other
+coverage/
+

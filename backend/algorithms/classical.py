@@ -69,14 +69,16 @@ def _match_features(descriptors1: Optional[np.ndarray],
     
     matcher = cv2.BFMatcher(norm_type, crossCheck=False)
     try:
-        matches = matcher.knnMatch(descriptors1, descriptors2, k=2)
-        # Lowe's ratio test
+        matches = matcher.knnMatch(descriptors1, descriptors2, k=3)
         good_matches = []
-        for match_pair in matches:
-            if len(match_pair) == 2:
-                m, n = match_pair
-                if m.distance < 0.7 * n.distance:
-                    good_matches.append(m)
+        for match_triplet in matches:
+            # Aynı anahtar nokta ile eşleştirmeyi engelle
+            candidates = [m for m in match_triplet if m.queryIdx != m.trainIdx]
+            if len(candidates) < 2:
+                continue
+            m, n = candidates[0], candidates[1]
+            if m.distance < 0.7 * n.distance:
+                good_matches.append(m)
         return good_matches
     except cv2.error:
         return []
@@ -124,10 +126,18 @@ def _detect_copy_move_region(image: np.ndarray,
     
     # İstatistiksel analiz
     match_density = len(matches) / max((height * width / 10000), 1)
+    confidence_score = float(np.clip(consistency_score * min(len(matches) / 200.0, 1.0), 0.0, 1.0))
+    detected = (
+        len(matches) > 60 and
+        consistency_score > 0.8 and
+        avg_distance > 10.0 and
+        max_distance > 15.0 and
+        match_density > 0.5
+    )
     
     return {
-        "detected": len(matches) > 10 and consistency_score > 0.6,
-        "confidence": min(float(consistency_score * match_density), 1.0),
+        "detected": detected,
+        "confidence": confidence_score,
         "region_count": len(matches),
         "average_distance": float(avg_distance),
         "consistency_score": float(consistency_score)
@@ -210,12 +220,16 @@ def detect_copy_move(image: np.ndarray) -> dict:
     confidences = [results[m]["region_detection"]["confidence"] 
                   for m in available_methods]
     
+    detected_methods = [
+        results[m]["region_detection"]["detected"]
+        for m in available_methods if m in results
+    ]
     results["summary"] = {
         "available_methods": available_methods,
         "overall_confidence": float(np.mean(confidences)) if confidences else 0.0,
         "method_count": len(available_methods),
-        "consensus_detected": any(results[m]["region_detection"]["detected"] 
-                                 for m in available_methods if m in results)
+        "consensus_detected": sum(detected_methods) >= 2,
+        "detected_methods": sum(detected_methods)
     }
     
     return results

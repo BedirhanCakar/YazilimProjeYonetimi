@@ -253,8 +253,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Klasik algoritma skoru
         let classicalScore = 0;
+        let classicalConsensus = false;
         if (data.classical_algorithms && data.classical_algorithms.summary) {
             classicalScore = data.classical_algorithms.summary.overall_confidence * 100;
+            classicalConsensus = data.classical_algorithms.summary.consensus_detected === true;
         }
 
         let html = `
@@ -268,7 +270,8 @@ document.addEventListener('DOMContentLoaded', () => {
             </div>
         `;
 
-        const isSuspicious = avgScore >= (threshold * 100) || classicalScore > 50;
+        const isClassicalAlarm = classicalConsensus && classicalScore > 70;
+        const isSuspicious = avgScore >= (threshold * 100) || isClassicalAlarm;
         const verdictClass = isSuspicious ? 'suspicious' : 'safe';
         const verdictText = isSuspicious 
             ? '⚠️ Görüntü SAHTECİLİK BELİRTİLERİ İÇERİYOR'
