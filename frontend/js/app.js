@@ -67,11 +67,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: formData,
             });
 
+            const data = await response.json().catch(() => null);
             if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
+                const message = data?.detail || `HTTP error! status: ${response.status}`;
+                throw new Error(message);
             }
 
-            const data = await response.json();
             loading.classList.add('hidden');
 
             // Sonuçları göster

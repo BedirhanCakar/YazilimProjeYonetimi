@@ -4,12 +4,42 @@ from typing import Optional
 import cv2
 import numpy as np
 from fastapi import FastAPI, File, HTTPException, UploadFile
+import traceback
+import logging
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import HTMLResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.algorithms.classical import detect_copy_move
 from backend.algorithms.deep_learning import predict_deepfake
+import numpy as _np
+import torch as _torch
+
+
+def _to_python_native(obj):
+    """Recursively convert numpy/torch types to native Python types for JSON."""
+    # scalars
+    if isinstance(obj, _np.generic):
+        return obj.item()
+    if isinstance(obj, (_torch.Tensor,)):
+        try:
+            return obj.detach().cpu().numpy().tolist()
+        except Exception:
+            return str(obj)
+    if isinstance(obj, (bytes, bytearray)):
+        return None
+    # arrays
+    if isinstance(obj, _np.ndarray):
+        return obj.tolist()
+    # dict
+    if isinstance(obj, dict):
+        return {str(k): _to_python_native(v) for k, v in obj.items()}
+    # list/tuple
+    if isinstance(obj, (list, tuple)):
+        return [_to_python_native(v) for v in obj]
+    # bool, int, float, str, None
+    return obj
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 FRONTEND_DIR = ROOT_DIR / "frontend"
@@ -79,48 +109,58 @@ async def upload_image(
     Returns:
         JSON formatında analiz sonuçları
     """
-    # Dosya formatı kontrolü
-    allowed_extensions = {"jpg", "jpeg", "png", "gif"}
-    filename_lower = file.filename.lower()
-    
-    if not any(filename_lower.endswith(f".{ext}") for ext in allowed_extensions):
-        raise HTTPException(
-            status_code=400,
-            detail="Sadece JPG, JPEG, PNG ve GIF formatları desteklenir."
-        )
-
-    # Dosya içeriğini oku
     try:
-        content = await file.read()
-        image = read_image_bytes(content)
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error))
+        # Dosya formatı kontrolü
+        allowed_extensions = {"jpg", "jpeg", "png", "gif"}
+        filename_lower = file.filename.lower()
 
-    # Analiz yap
-    try:
-        classical_results = detect_copy_move(image)
-        ai_results = predict_deepfake(image, threshold=threshold)
-    except Exception as error:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Analiz sırasında hata: {str(error)}"
-        )
+        if not any(filename_lower.endswith(f".{ext}") for ext in allowed_extensions):
+            raise HTTPException(
+                status_code=400,
+                detail="Sadece JPG, JPEG, PNG ve GIF formatları desteklenir."
+            )
 
-    # Sonuçları döndür
-    response = {
-        "filename": file.filename,
-        "image_shape": {
-            "height": int(image.shape[0]),
-            "width": int(image.shape[1]),
-            "channels": int(image.shape[2]) if len(image.shape) > 2 else 1
-        },
-        "classical_algorithms": classical_results,
-        "ai_algorithms": ai_results,
-        "timestamp": None,  # Frontend'de istenirse eklenebilir
-        "message": "Görüntü analizi tamamlandı"
-    }
-    
-    return JSONResponse(content=response, status_code=200)
+        # Dosya içeriğini oku
+        try:
+            content = await file.read()
+            image = read_image_bytes(content)
+        except ValueError as error:
+            raise HTTPException(status_code=400, detail=str(error))
+
+        # Analiz yap
+        try:
+            classical_results = detect_copy_move(image)
+            ai_results = predict_deepfake(image, threshold=threshold)
+        except Exception as error:
+            raise HTTPException(
+                status_code=500,
+                detail=f"Analiz sırasında hata: {str(error)}"
+            )
+
+        # Sonuçları döndür
+        response = {
+            "filename": file.filename,
+            "image_shape": {
+                "height": int(image.shape[0]),
+                "width": int(image.shape[1]),
+                "channels": int(image.shape[2]) if len(image.shape) > 2 else 1
+            },
+            "classical_algorithms": classical_results,
+            "ai_algorithms": ai_results,
+            "timestamp": None,  # Frontend'de istenirse eklenebilir
+            "message": "Görüntü analizi tamamlandı"
+        }
+
+        safe = _to_python_native(response)
+        return JSONResponse(content=jsonable_encoder(safe), status_code=200)
+    except HTTPException:
+        # Rethrow HTTPExceptions so FastAPI handles them normally
+        raise
+    except Exception as e:
+        # Log full traceback to server console for debugging
+        tb = traceback.format_exc()
+        logging.error("Unhandled exception in /upload/: %s", tb)
+        raise HTTPException(status_code=500, detail=f"Sunucu hatası: {str(e)}")
 
 
 @app.get("/health")

@@ -84,6 +84,7 @@ class ForgeryLSTM(nn.Module):
             nn.Conv2d(32, feature_dim, kernel_size=3, padding=1),
             nn.ReLU(),
         )
+        self.adaptive_pool = nn.AdaptiveAvgPool2d((32, 32))
         
         self.lstm = nn.LSTM(
             input_size=feature_dim * 32 * 32,
@@ -107,6 +108,7 @@ class ForgeryLSTM(nn.Module):
         batch_size = x.size(0)
         
         features = self.conv(x)
+        features = self.adaptive_pool(features)
         features_flat = features.view(batch_size, -1)
         
         # Sequence oluştur
@@ -140,11 +142,13 @@ def _prepare_image_tensor(image: np.ndarray,
     
     # Normalize (ImageNet istatistikleri)
     normalized = resized.astype(np.float32) / 255.0
-    normalized = (normalized - np.array([0.485, 0.456, 0.406])) / \
-                 np.array([0.229, 0.224, 0.225])
+    mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+    std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+    normalized = (normalized - mean) / std
+    normalized = normalized.astype(np.float32)
     
     # Channels first (CHW)
-    tensor = torch.from_numpy(normalized.transpose(2, 0, 1))
+    tensor = torch.from_numpy(normalized.transpose(2, 0, 1)).float()
     
     return tensor.unsqueeze(0)  # Batch dimension ekle
 
@@ -236,8 +240,8 @@ def predict_deepfake(image: np.ndarray, threshold: float = 0.5) -> Dict:
         cnn_prob = float(cnn_scores[1])
         results["cnn"] = {
             "probability": cnn_prob,
-            "is_suspicious": cnn_prob >= threshold,
-            "confidence": max(cnn_scores)
+            "is_suspicious": bool(cnn_prob >= threshold),
+            "confidence": float(np.max(cnn_scores))
         }
         
         # LSTM Model
@@ -251,8 +255,8 @@ def predict_deepfake(image: np.ndarray, threshold: float = 0.5) -> Dict:
         lstm_prob = float(lstm_scores[1])
         results["lstm"] = {
             "probability": lstm_prob,
-            "is_suspicious": lstm_prob >= threshold,
-            "confidence": max(lstm_scores)
+            "is_suspicious": bool(lstm_prob >= threshold),
+            "confidence": float(np.max(lstm_scores))
         }
         
         # ELA Analizi
