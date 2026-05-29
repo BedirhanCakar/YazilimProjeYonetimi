@@ -163,15 +163,35 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     /**
-     * Klasik algoritma sonuçlarını göster
+     * Klasik algoritma sonuçlarını göster ve copy-move çizgilerini çiz
      */
     function displayClassicalResults(classicalData) {
         const classicalResults = document.getElementById('classical-results');
         const algorithmsList = document.getElementById('algorithms-list');
+        const canvas = document.getElementById('detection-canvas');
+        const ctx = canvas.getContext('2d');
+        const img = document.getElementById('preview-image');
+
+        // Canvas'ı temizle
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Canvas boyutunu resmin orijinal boyutuna eşitle
+        if (img.naturalWidth && img.naturalHeight) {
+            canvas.width = img.naturalWidth;
+            canvas.height = img.naturalHeight;
+        }
 
         algorithmsList.innerHTML = '';
 
         const algorithms = ['sift', 'surf', 'akaze', 'orb'];
+        // Algoritmalar için çizim renkleri
+        const colors = {
+            sift: 'rgba(239, 68, 68, 0.75)',  // Kırmızı
+            surf: 'rgba(59, 130, 246, 0.75)',  // Mavi
+            akaze: 'rgba(16, 185, 129, 0.75)', // Yeşil
+            orb: 'rgba(245, 158, 11, 0.75)'    // Turuncu
+        };
+
         algorithms.forEach(algo => {
             if (classicalData[algo] && classicalData[algo].available) {
                 const data = classicalData[algo];
@@ -184,8 +204,38 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 if (data.region_detection) {
                     const regionData = data.region_detection;
-                    content += `<p>Tespit: ${regionData.detected ? '✓ Şüpheli' : '✗ Normal'}</p>`;
+                    const statusClass = regionData.detected ? 'suspicious' : 'safe';
+                    const statusText = regionData.detected ? '✓ Şüpheli' : '✗ Normal';
+                    content += `<p>Tespit: <span class="badge ${statusClass}">${statusText}</span></p>`;
                     content += `<p>Güven: ${(regionData.confidence * 100).toFixed(1)}%</p>`;
+                    
+                    // Copy-move koordinatları varsa canvas'a çiz
+                    if (regionData.matches && regionData.matches.length > 0) {
+                        ctx.strokeStyle = colors[algo];
+                        ctx.lineWidth = Math.max(2, Math.round(canvas.width / 500)); // Çözünürlüğe göre kalınlık
+                        ctx.fillStyle = colors[algo];
+
+                        regionData.matches.forEach(match => {
+                            const pt1 = match.pt1;
+                            const pt2 = match.pt2;
+
+                            // 1. Nokta
+                            ctx.beginPath();
+                            ctx.arc(pt1[0], pt1[1], ctx.lineWidth * 2, 0, 2 * Math.PI);
+                            ctx.fill();
+
+                            // 2. Nokta
+                            ctx.beginPath();
+                            ctx.arc(pt2[0], pt2[1], ctx.lineWidth * 2, 0, 2 * Math.PI);
+                            ctx.fill();
+
+                            // Çizgi
+                            ctx.beginPath();
+                            ctx.moveTo(pt1[0], pt1[1]);
+                            ctx.lineTo(pt2[0], pt2[1]);
+                            ctx.stroke();
+                        });
+                    }
                 }
 
                 div.innerHTML = content;

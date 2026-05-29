@@ -49,7 +49,10 @@
         <!-- Preview Panel -->
         <section id="preview-section" class="preview-panel hidden">
             <h3>Yüklenen Görüntü</h3>
-            <img id="preview-image" src="" alt="Yüklenen görüntü" />
+            <div class="image-container" style="position: relative; display: inline-block; max-width: 100%;">
+                <img id="preview-image" src="" alt="Yüklenen görüntü" style="display: block; max-width: 100%; height: auto;" />
+                <canvas id="detection-canvas" style="position: absolute; top: 0; left: 0; pointer-events: none; width: 100%; height: 100%;"></canvas>
+            </div>
         </section>
 
         <!-- Results Panel -->
