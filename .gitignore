@@ -65,7 +65,10 @@ node_modules/
 # Other
 coverage/
 
-# Real ve Fake görsel klasörleri (GitHub'a yüklenmesin)
-**/data/train/real/
-**/data/train/fake/
+# Eğitim dataseti klasörleri (fake/real içeriği git'e yüklenmesin)
+backend/data/train/real/
+backend/data/train/fake/
+
+data/train/real/
+data/train/fake/
 **/fake/
