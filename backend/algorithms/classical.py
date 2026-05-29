@@ -110,9 +110,11 @@ def _detect_copy_move_region(image: np.ndarray,
             "average_distance": 0.0
         }
     
-    # Eşleştirme vektörlerinin uzunluğunu hesapla
+    # Eşleştirme vektörlerinin uzunluğunu hesapla ve koordinatları topla
     distances = []
     displacement_vectors = []
+    match_pairs = []
+    
     for match in matches:
         kp_q = keypoints[match.queryIdx]
         kp_t = keypoints[match.trainIdx]
@@ -121,6 +123,13 @@ def _detect_copy_move_region(image: np.ndarray,
         dist = np.hypot(dx, dy)
         distances.append(dist)
         displacement_vectors.append((dx, dy))
+        
+        # İlk 150 eşleşmenin koordinatlarını kaydet (performans ve JSON boyutu için sınırlandırıldı)
+        if len(match_pairs) < 150:
+            match_pairs.append({
+                "pt1": [float(kp_q.pt[0]), float(kp_q.pt[1])],
+                "pt2": [float(kp_t.pt[0]), float(kp_t.pt[1])]
+            })
     
     avg_distance = np.mean(distances) if distances else 0.0
     max_distance = np.max(distances) if distances else 0.0
@@ -159,7 +168,8 @@ def _detect_copy_move_region(image: np.ndarray,
         "region_count": len(matches),
         "average_distance": float(avg_distance),
         "consistency_score": float(consistency_score),
-        "translation_consistency": float(translation_consistency)
+        "translation_consistency": float(translation_consistency),
+        "matches": match_pairs
     }
 
 
