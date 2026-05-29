@@ -65,3 +65,7 @@ node_modules/
 # Other
 coverage/
 
+# Real ve Fake görsel klasörleri (GitHub'a yüklenmesin)
+**/data/train/real/
+**/data/train/fake/
+**/fake/
