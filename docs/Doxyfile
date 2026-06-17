@@ -1,0 +1,84 @@
+# Doxygen yapılandırması - Görüntü Sahteciliği Tespiti
+
+PROJECT_NAME           = "Görüntü Sahteciliği Tespiti"
+PROJECT_NUMBER         = 1.0.0
+PROJECT_BRIEF          = "Klasik CV ve Derin Öğrenme Tabanlı Görüntü Sahtecilik Tespiti Sistemi"
+PROJECT_LOGO           = 
+OUTPUT_DIRECTORY       = ./docs/doxygen_output
+CREATE_SUBDIRS         = NO
+
+# Giriş dosyaları
+INPUT                  = backend/ frontend/ docs/user_manual.md
+INPUT_ENCODING         = UTF-8
+FILE_PATTERNS          = *.py *.html *.css *.js *.md
+RECURSIVE              = YES
+
+# Dokümantasyon çıkışı
+GENERATE_HTML          = YES
+HTML_OUTPUT            = html
+HTML_TIMESTAMP         = YES
+GENERATE_LATEX         = YES
+LATEX_OUTPUT           = latex
+GENERATE_MAN           = YES
+GENERATE_RTF           = NO
+GENERATE_DOCSET        = NO
+GENERATE_HTMLHELP      = NO
+GENERATE_QHP           = NO
+GENERATE_ECLIPSEHELP   = NO
+GENERATE_TREEVIEW      = YES
+TREEVIEW_WIDTH         = 250
+SEARCHENGINE           = YES
+
+# Python desteği
+EXTENSION_MAPPING      = py=Python
+PYTHON_DOCSTRING       = DOXYGEN
+
+# Diagram ve grafikler
+HAVE_DOT               = YES
+CLASS_DIAGRAMS         = YES
+CALL_GRAPH             = YES
+CALLER_GRAPH           = YES
+GRAPHICAL_HIERARCHY    = YES
+DIRECTORY_GRAPH        = YES
+DOT_IMAGE_FORMAT       = svg
+INTERACTIVE_SVG        = YES
+
+# Kod örnekleri
+SOURCE_BROWSER         = YES
+STRIP_CODE_COMMENTS    = NO
+FULL_PATH_NAMES        = YES
+STRIP_FROM_PATH        = 
+STRIP_FROM_INC_PATH    = 
+
+# Tarama seçenekleri
+EXTRACT_STATIC         = YES
+EXTRACT_LOCAL_CLASSES  = YES
+EXTRACT_LOCAL_METHODS  = YES
+EXTRACT_PRIVATE        = YES
+EXTRACT_PACKAGE        = YES
+EXTRACT_ANONYMOUS_NAMESPACES = YES
+
+# Tema
+HTML_EXTRA_STYLESHEET  = 
+HTML_COLORSTYLE_HUE    = 220
+HTML_COLORSTYLE_SAT    = 100
+HTML_COLORSTYLE_GAMMA  = 80
+
+# Kullanıcı tanımı
+ALIASES                = "important=\xrefitem important \"Önemli\" \"Önemli Notlar\""
+ALIASES                += "bug=\xrefitem bug \"Hata\" \"Bilinen Hatalar\""
+ALIASES                += "todo=\xrefitem todo \"Yapılacaklar\" \"Yapılacak Görevler\""
+
+# Performans
+NUM_PROC_THREADS       = 4
+
+# Genel seçenekler
+QUIET                  = NO
+WARNINGS               = YES
+WARN_IF_UNDOCUMENTED   = YES
+WARN_IF_DOC_LINTER_FAILED = NO
+
+# XML çıkışı (analiz araçları için)
+GENERATE_XML           = YES
+XML_OUTPUT             = xml
+XML_PROGRAMLISTING     = YES
